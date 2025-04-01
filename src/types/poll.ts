@@ -1,4 +1,3 @@
-
 export interface PollQuestion {
   id: string;
   statement: string;
@@ -16,8 +15,35 @@ export interface UserResponse {
   timeSpent?: number; // Time in seconds
 }
 
+export interface RankingQuestion {
+  id: string;
+  statement: string;
+  options: string[];  // Array of options to rank
+  correctRanking?: number[]; // Optional correct ranking (indices of options array)
+  explanation?: string;
+}
+
+export interface RankingResponse {
+  questionId: string;
+  ranking: number[];  // Array of indices representing user's ranking
+  confidenceLevel: number;
+  comment?: string;
+  timeSpent?: number;
+}
+
 export interface PollResults {
   responses: UserResponse[];
   totalTimeSpent: number;
   completedAt: Date;
+}
+
+export interface RankingResults {
+  responses: RankingResponse[];
+  totalTimeSpent: number;
+  completedAt: Date;
+}
+export interface DemographicResponse {
+  aiExperience: string;
+  aiFrequency: string;
+  aiTrust: string;
 }

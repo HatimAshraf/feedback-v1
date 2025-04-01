@@ -7,7 +7,7 @@ import {
   CardFooter,
   CardHeader,
 } from '@/components/ui/card';
-import { usePoll } from '@/context/PollContext';
+import { useRanking } from '@/context/RankingContext';
 import {
   BarChart,
   Bar,
@@ -18,31 +18,79 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { text } from 'stream/consumers';
 
-const PollResults: React.FC = () => {
-  const { results, questions, resetPoll } = usePoll();
+const RankingResults: React.FC = () => {
+  const { results, questions, resetRanking } = useRanking();
 
   if (!results) return null;
 
   // Calculate result statistics
-  const correctAnswers = results.responses.filter((response) => {
-    const question = questions.find((q) => q.id === response.questionId);
-    return question && question.correctOption === response.selectedOption;
+  const correctRankings = results.responses.filter((response, index) => {
+    const question = questions[index];
+    if (!question.correctRanking) return false;
+
+    // Check if the ranking matches exactly
+    return (
+      JSON.stringify(response.ranking) ===
+      JSON.stringify(question.correctRanking)
+    );
   }).length;
 
-  const accuracy = (correctAnswers / questions.length) * 100;
+  const accuracy = (correctRankings / questions.length) * 100;
+
+  // Calculate partial correctness (Kendall's Tau distance)
+  const calculateKendallTau = (
+    userRanking: number[],
+    correctRanking: number[] | undefined
+  ) => {
+    if (!correctRanking) return 0;
+
+    // Count number of concordant and discordant pairs
+    let concordant = 0;
+    let discordant = 0;
+
+    for (let i = 0; i < userRanking.length - 1; i++) {
+      for (let j = i + 1; j < userRanking.length; j++) {
+        // Check if the relative ordering is the same
+        const userOrder = userRanking[i] < userRanking[j];
+        const correctOrder = correctRanking[i] < correctRanking[j];
+
+        if (userOrder === correctOrder) {
+          concordant++;
+        } else {
+          discordant++;
+        }
+      }
+    }
+
+    const totalPairs = (userRanking.length * (userRanking.length - 1)) / 2;
+    return (concordant / totalPairs) * 100; // Return as percentage
+  };
+
+  const avgPartialCorrectness =
+    results.responses.reduce((sum, response, index) => {
+      const question = questions[index];
+      return (
+        sum + calculateKendallTau(response.ranking, question.correctRanking)
+      );
+    }, 0) / questions.length;
 
   // Prepare data for confidence by correctness chart
-  const correctResponses = results.responses.filter((r) => {
-    const q = questions.find((q) => q.id === r.questionId);
-    return q?.correctOption === r.selectedOption;
+  const correctResponses = results.responses.filter((_r, index) => {
+    const q = questions[index];
+    const r = results.responses[index];
+    return (
+      q.correctRanking &&
+      JSON.stringify(r.ranking) === JSON.stringify(q.correctRanking)
+    );
   });
 
-  const incorrectResponses = results.responses.filter((r) => {
-    const q = questions.find((q) => q.id === r.questionId);
+  const incorrectResponses = results.responses.filter((_r, index) => {
+    const q = questions[index];
+    const r = results.responses[index];
     return (
-      q?.correctOption !== undefined && q.correctOption !== r.selectedOption
+      q.correctRanking &&
+      JSON.stringify(r.ranking) !== JSON.stringify(q.correctRanking)
     );
   });
 
@@ -58,12 +106,12 @@ const PollResults: React.FC = () => {
 
   const confidenceData = [
     {
-      name: 'Correct Answers',
+      name: 'Correct Rankings',
       confidence: avgCorrectConfidence,
       fill: '#2A9D8F',
     },
     {
-      name: 'Incorrect Answers',
+      name: 'Incorrect Rankings',
       confidence: avgIncorrectConfidence,
       fill: '#E76F51',
     },
@@ -87,7 +135,7 @@ const PollResults: React.FC = () => {
             transition={{ delay: 0.2 }}
             className='text-2xl font-bold text-gray-800'
           >
-            Your Poll Results
+            Your Ranking Results
           </motion.h2>
           <motion.p
             initial={{ opacity: 0 }}
@@ -107,26 +155,21 @@ const PollResults: React.FC = () => {
             className='grid grid-cols-1 md:grid-cols-3 gap-4'
           >
             <div className='bg-primary-50 p-4 rounded-lg text-center'>
-              <h3 className='text-gray-600 text-sm'>Accuracy</h3>
+              <h3 className='text-gray-600 text-sm'>Exact Match Accuracy</h3>
               <p className='text-2xl font-bold text-primary-600'>
                 {accuracy.toFixed(0)}%
               </p>
               <p className='text-sm text-gray-500'>
-                {correctAnswers} of {questions.length} correct
+                {correctRankings} of {questions.length} correct
               </p>
             </div>
 
             <div className='bg-secondary-50 p-4 rounded-lg text-center'>
-              <h3 className='text-gray-600 text-sm'>Avg. Confidence</h3>
+              <h3 className='text-gray-600 text-sm'>Partial Correctness</h3>
               <p className='text-2xl font-bold text-secondary-600'>
-                {(
-                  results.responses.reduce(
-                    (sum, r) => sum + r.confidenceLevel,
-                    0
-                  ) / results.responses.length
-                ).toFixed(1)}
+                {avgPartialCorrectness.toFixed(1)}%
               </p>
-              <p className='text-sm text-gray-500'>out of 5</p>
+              <p className='text-sm text-gray-500'>based on pair ordering</p>
             </div>
 
             <div className='bg-accent-50 p-4 rounded-lg text-center'>
@@ -147,7 +190,7 @@ const PollResults: React.FC = () => {
             className='mt-6'
           >
             <h3 className='text-lg font-semibold text-gray-700 mb-4'>
-              Confidence by Answer Correctness
+              Confidence by Ranking Correctness
             </h3>
             <div className='h-64'>
               <ResponsiveContainer width='100%' height='100%'>
@@ -167,7 +210,7 @@ const PollResults: React.FC = () => {
                     label={{
                       value: 'Confidence Level',
                       angle: -90,
-                      position: 'Left',
+                      position: 'insideLeft',
                     }}
                   />
                   <Tooltip />
@@ -180,11 +223,10 @@ const PollResults: React.FC = () => {
 
         <CardFooter className='flex justify-center'>
           <Button
-            onClick={resetPoll}
+            onClick={resetRanking}
             variant='outline'
             size='lg'
-            className='mt-4 hover:bg-blue-700
-            hover:text-white'
+            className='mt-4 hover:bg-blue-700 hover:text-white'
           >
             Start Over
           </Button>
@@ -194,4 +236,4 @@ const PollResults: React.FC = () => {
   );
 };
 
-export default PollResults;
+export default RankingResults;
